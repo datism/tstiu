@@ -235,21 +235,50 @@ export async function exportTestDocx({ test = null, filename = 'export.docx', re
 
   // Body: questions
   if (!test) throw new Error('No test provided');
-  if (!Array.isArray(test.sections)) throw new Error('Test object must include a sections array');
-  let qIdx = 0; // This will now reset for each test, which is fine as it's per-document.
-  test.sections.forEach((section) => {
-    // Section instruction
-    if (section.instruction) {
-      allChildren.push(new Paragraph({
-        children: [new TextRun({ text: section.instruction, bold: true, italics: true, size: fontSize})], // 14pt font size
-      }));
-    }
+  const questions = Array.isArray(test.questions) ? test.questions : [];
+  if (!Array.isArray(questions)) throw new Error('Test object must include a questions array');
+  let qIdx = 0;
 
-    (section.questions || []).forEach((q) => {
-      if (q.type === 'mcq') {
+  // Optional test-level instruction
+  if (test.instruction) {
+    allChildren.push(new Paragraph({
+      children: [new TextRun({ text: test.instruction, bold: true, italics: true, size: fontSize })],
+    }));
+  }
+
+  questions.forEach((q) => {
+    if (q.type === 'mcq') {
+      qIdx += 1;
+
+      let pStripeedRes = stripOuterP(q.text);
+      if (pStripeedRes.hasInnerP) {
+        allChildren.push(new Paragraph({ children: [
+          new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
+        ]}));
+        allChildren.push(
+          ...parseQuillHTML(pStripeedRes.html)
+        );
+      } else {
+        allChildren.push(new Paragraph({ children: [
+          new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
+          ...parseQuillHTML(pStripeedRes.html)
+        ]}));
+      }
+      allChildren.push(...formatOption(q, fontSize))
+    } else if (q.type === 'reading') {
+      if (q.title) {
+        allChildren.push(new Paragraph({
+          children: [new TextRun({ text: q.title, bold: true, size: fontSize })],
+          alignment: AlignmentType.CENTER,
+        }));
+      }
+      if (q.passage) {
+        allChildren.push(...parseQuillHTML(q.passage));
+      }
+      (q.questions || []).forEach((subQ) => {
         qIdx += 1;
 
-        let pStripeedRes = stripOuterP(q.text);
+        let pStripeedRes = stripOuterP(subQ.text);
         if (pStripeedRes.hasInnerP) {
           allChildren.push(new Paragraph({ children: [
             new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
@@ -263,67 +292,38 @@ export async function exportTestDocx({ test = null, filename = 'export.docx', re
             ...parseQuillHTML(pStripeedRes.html)
           ]}));
         }
-        allChildren.push(...formatOption(q, fontSize))
-      } else if (q.type === 'reading') {
-        if (q.title) {
-          allChildren.push(new Paragraph({
-            children: [new TextRun({ text: q.title, bold: true, size: fontSize })],
-            alignment: AlignmentType.CENTER,
-          }));
-        }
-        if (q.passage) {
-          allChildren.push(...parseQuillHTML(q.passage));
-        }
-        q.questions.forEach((subQ) => {
-          qIdx += 1;
-
-          let pStripeedRes = stripOuterP(subQ.text);
-          if (pStripeedRes.hasInnerP) {
-            allChildren.push(new Paragraph({ children: [
-              new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
-            ]}));
-            allChildren.push(
-              ...parseQuillHTML(pStripeedRes.html)
-            );
-          } else {
-            allChildren.push(new Paragraph({ children: [
-              new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
-              ...parseQuillHTML(pStripeedRes.html)
-            ]}));
-          }
-          allChildren.push(...formatOption(subQ, fontSize));
+        allChildren.push(...formatOption(subQ, fontSize));
+      });
+    } else if (q.type === 'fill-in-the-blank') {
+      if (q.title) {
+        allChildren.push(new Paragraph({
+          children: [new TextRun({ text: q.title, bold: true, size: fontSize })],
+          alignment: AlignmentType.CENTER,
+        }));
+      }
+      if (q.passage) {
+        let blankCounter = qIdx + 1;
+        const passageWithBlanks = q.passage.replace(/\{blank\}/g, () => {
+          const id = `${blankCounter++}`;
+          return `<b>(${id}) _________</b>`;
         });
-      } else if (q.type === 'fill-in-the-blank') {
-        if (q.title) {
-          allChildren.push(new Paragraph({
-            children: [new TextRun({ text: q.title, bold: true, size: fontSize })],
-            alignment: AlignmentType.CENTER,
-          }));
-        }
-        if (q.passage) {
-          let blankCounter = qIdx + 1;
-          const passageWithBlanks = q.passage.replace(/\{blank\}/g, () => {
-            const id = `${blankCounter++}`; 
-            return `<b>(${id}) _________</b>`;
-          });
 
-          allChildren.push(...parseQuillHTML(passageWithBlanks));
-        }
-        q.questions.forEach((subQ) => {
-          qIdx += 1;
-          allChildren.push(new Paragraph({ children: [
-            new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
-          ]}));
-          allChildren.push(...formatOption(subQ, fontSize));
-        });
-      } else if (q.type === 'writing') {
+        allChildren.push(...parseQuillHTML(passageWithBlanks));
+      }
+      (q.questions || []).forEach((subQ) => {
         qIdx += 1;
         allChildren.push(new Paragraph({ children: [
           new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
-          ...parseQuillHTML(q.text)
         ]}));
-      }
-    });
+        allChildren.push(...formatOption(subQ, fontSize));
+      });
+    } else if (q.type === 'writing') {
+      qIdx += 1;
+      allChildren.push(new Paragraph({ children: [
+        new TextRun({ text: `Question ${qIdx}: `, bold: true, size: fontSize }),
+        ...parseQuillHTML(q.text)
+      ]}));
+    }
   });
 
   try {

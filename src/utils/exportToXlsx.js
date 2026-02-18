@@ -15,20 +15,18 @@ const getAnswer = (question) => {
   }
 };
 
-const flattenQuestions = (sections) => {
-  const questions = [];
-  sections.forEach(section => {
-    (section.questions || []).forEach(question => {
-      if (question.type === 'reading' || question.type === 'fill-in-the-blank') {
-        (question.questions || []).forEach(subQuestion => {
-          questions.push({ ...subQuestion, type: question.type });
-        });
-      } else {
-        questions.push(question);
-      }
-    });
+const flattenQuestions = (questions) => {
+  const flat = [];
+  (questions || []).forEach(question => {
+    if (question.type === 'reading' || question.type === 'fill-in-the-blank') {
+      (question.questions || []).forEach(subQuestion => {
+        flat.push({ ...subQuestion, type: question.type });
+      });
+    } else {
+      flat.push(question);
+    }
   });
-  return questions;
+  return flat;
 };
 
 export const exportToXlsx = async (projectOrTests) => {
@@ -43,7 +41,7 @@ export const exportToXlsx = async (projectOrTests) => {
   sheet.addRow(headers);
 
   // ✅ Get questions per test
-  const allTestsQuestions = tests.map(test => flattenQuestions(test.sections));
+  const allTestsQuestions = tests.map(test => flattenQuestions(test.questions));
 
   const maxQuestions = Math.max(...allTestsQuestions.map(q => q.length));
 

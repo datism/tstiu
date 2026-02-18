@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useTestsStore } from '../store/useTestsStore';
 import QuillEditor from './QuillEditor';
 import { validateReadingQuestion } from '../utils/validation';
 
-export default function ReadingQuestionWizard({ sectionId, onClose, question }) {
+export default function ReadingQuestionWizard({ onClose, question }) {
   const [newQuestion, setNewQuestion] = useState(
     question || {
       id: Date.now(),
@@ -22,7 +22,7 @@ export default function ReadingQuestionWizard({ sectionId, onClose, question }) 
     }
   );
   const [errors, setErrors] = useState({});
-  const { addQuestion, updateQuestion } = useProjectsStore();
+  const { addQuestion, updateQuestion } = useTestsStore();
   const isEditing = !!question;
 
   const handleSave = () => {
@@ -33,9 +33,9 @@ export default function ReadingQuestionWizard({ sectionId, onClose, question }) 
     }
 
     if (isEditing) {
-      updateQuestion(sectionId, newQuestion);
+      updateQuestion(newQuestion);
     } else {
-      addQuestion(sectionId, newQuestion);
+      addQuestion(newQuestion);
     }
     onClose();
   };

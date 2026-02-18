@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useTestsStore } from '../store/useTestsStore';
 import QuillEditor from './QuillEditor';
 import { validateFillInTheBlankQuestion } from '../utils/validation';
 
-export default function FillInTheBlankQuestionWizard({ sectionId, onClose, question }) {
+export default function FillInTheBlankQuestionWizard({ onClose, question }) {
   const [newQuestion, setNewQuestion] = useState(
     question || {
       id: Date.now(),
@@ -21,7 +21,7 @@ export default function FillInTheBlankQuestionWizard({ sectionId, onClose, quest
     }
   );
   const [errors, setErrors] = useState({});
-  const { addQuestion, updateQuestion } = useProjectsStore();
+  const { addQuestion, updateQuestion } = useTestsStore();
   const isEditing = !!question;
 
   // Effect to synchronize sub-questions with the number of blanks in the passage
@@ -59,9 +59,9 @@ export default function FillInTheBlankQuestionWizard({ sectionId, onClose, quest
     }
 
     if (isEditing) {
-      updateQuestion(sectionId, newQuestion);
+      updateQuestion(newQuestion);
     } else {
-      addQuestion(sectionId, newQuestion);
+      addQuestion(newQuestion);
     }
     onClose();
   };

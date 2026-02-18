@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Edit, GripVertical, Trash2, Plus, ChevronDown, X, Check } from 'lucide-react';
+import { ChevronLeft, Edit, GripVertical, Trash2, Plus, ChevronDown, X, Check, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useTestsStore } from '../store/useTestsStore';
+import { useShuffleTests } from '../hooks/useShuffleTests';
 import MCQQuestionWizard from './MCQQuestionWizard';
 import ReadingQuestionWizard from './ReadingQuestionWizard';
 import WritingQuestionWizard from './WritingQuestionWizard';
 import FillInTheBlankQuestionWizard from './FillInTheBlankQuestionWizard';
+import ExportModal from './ExportModal';
 
 function extractTextFromHTML(html) {
   const parser = new DOMParser();
@@ -30,20 +32,14 @@ const getQuestionPreview = (question) => {
 
 export default function TestPreview() {
   const navigate = useNavigate();
-  const { selectedTest, deleteQuestion, updateQuestion, updateTestName } = useProjectsStore();
+  const { selectedTest, deleteQuestion, updateQuestion, updateTestName, addTest } = useTestsStore();
+  const { validateShuffle, generateTests } = useShuffleTests();
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [wizard, setWizard] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [newTestName, setNewTestName] = useState('');
-  const [collapsedSections, setCollapsedSections] = useState({});
   const [collapsedQuestions, setCollapsedQuestions] = useState({});
-
-  const toggleSection = (sectionId) => {
-    setCollapsedSections(prevState => ({
-      ...prevState,
-      [sectionId]: !prevState[sectionId]
-    }));
-  };
 
   const toggleQuestion = (questionId) => {
     setCollapsedQuestions(prevState => ({
@@ -63,10 +59,22 @@ export default function TestPreview() {
       <div className="max-w-2xl mx-auto p-8 text-gray-400 text-center text-lg">No test selected.</div>
     );
   }
-  const sections = selectedTest.sections || [];
+  // Backwards-compat: if this test still has `sections` (legacy), derive questions from them.
+  const flattenSectionsToQuestions = (test) => {
+    if (!test) return [];
+    if (Array.isArray(test.questions) && test.questions.length > 0) return test.questions;
+    const secs = test.sections || [];
+    const flattened = [];
+    secs.forEach((s) => {
+      (s.questions || []).forEach(q => flattened.push(q));
+    });
+    return flattened;
+  };
 
-  const openWizard = (type, sectionId, question = null) => {
-    setWizard({ type, sectionId, question });
+  const questions = flattenSectionsToQuestions(selectedTest);
+
+  const openWizard = (type, question = null) => {
+    setWizard({ type, question });
     setActiveDropdown(null);
   }
 
@@ -87,19 +95,19 @@ export default function TestPreview() {
   };
 
   if (wizard?.type === 'mcq') {
-    return <MCQQuestionWizard onClose={() => setWizard(null)} sectionId={wizard.sectionId} question={wizard.question} />;
+    return <MCQQuestionWizard onClose={() => setWizard(null)} question={wizard.question} />;
   }
 
   if (wizard?.type === 'reading') {
-    return <ReadingQuestionWizard onClose={() => setWizard(null)} sectionId={wizard.sectionId} question={wizard.question} />;
+    return <ReadingQuestionWizard onClose={() => setWizard(null)} question={wizard.question} />;
   }
 
   if (wizard?.type === 'writing') {
-    return <WritingQuestionWizard onClose={() => setWizard(null)} sectionId={wizard.sectionId} question={wizard.question} />;
+    return <WritingQuestionWizard onClose={() => setWizard(null)} question={wizard.question} />;
   }
 
   if (wizard?.type === 'fill-in-the-blank') {
-    return <FillInTheBlankQuestionWizard onClose={() => setWizard(null)} sectionId={wizard.sectionId} question={wizard.question} />;
+    return <FillInTheBlankQuestionWizard onClose={() => setWizard(null)} question={wizard.question} />;
   }
 
   return (
@@ -151,286 +159,179 @@ export default function TestPreview() {
                     </div>
                   )}
                 </div>
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <button
+                            onClick={() => setActiveDropdown(activeDropdown === 'header' ? null : 'header')}
+                            className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm"
+                          >
+                            Add Question
+                          </button>
+                          {activeDropdown === 'header' && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                              <button
+                                onClick={() => { setActiveDropdown(null); openWizard('mcq'); }}
+                                className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
+                              >
+                                Multi Choice
+                              </button>
+                              <button
+                                onClick={() => { setActiveDropdown(null); openWizard('reading'); }}
+                                className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
+                              >
+                                Reading Question
+                              </button>
+                              <button
+                                onClick={() => { setActiveDropdown(null); openWizard('writing'); }}
+                                className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
+                              >
+                                Writing Question
+                              </button>
+                              <button
+                                onClick={() => { setActiveDropdown(null); openWizard('fill-in-the-blank'); }}
+                                className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
+                              >
+                                Fill-in-the-blank
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const res = validateShuffle(selectedTest);
+                            if (!res.valid) return alert(res.error || 'Cannot shuffle this test');
+                            const newTests = generateTests(selectedTest);
+                            newTests.forEach(nt => addTest(nt));
+                            alert('Shuffled test generated');
+                          }}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                        >
+                          Shuffle
+                        </button>
+                        <button
+                          onClick={() => setExportOpen(true)}
+                          className="px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm"
+                        >
+                          Export
+                        </button>
+                      </div>
               </div>
               <div className="mb-8">
                 <div className="flex items-center mb-6">
                   <h2 className="text-xl font-semibold text-gray-800">Test Questions</h2>
                 </div>
                 <div className="space-y-8">
-                  {sections.length === 0 ? (
-                    <div className="text-gray-400 text-center py-8">No sections or questions in this test.</div>
-                  ) : (
-                    sections.map((section, sectionIndex) => (
-                      <div key={section.id} className="border-t border-gray-200 pt-6 first:border-t-0">
-                        <button onClick={() => toggleSection(section.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
-                          <span>Section {sectionIndex + 1}: {section.name}</span>
-                          <ChevronDown className={`transition-transform duration-200 ${collapsedSections[section.id] ? '-rotate-90' : ''}`} size={24} />
-                        </button>
-                        {!collapsedSections[section.id] && (
-                          <>
-                            <div className="space-y-6">
-                              {(section.questions || []).length === 0 ? <div className="text-gray-400 text-center py-4">This section is empty.</div> : (section.questions || []).map((q, index) => {
-                                if (q.type === 'writing') {
-                                  return (
-                                    <div key={q.id} className="group relative pb-6 border-b border-gray-200 last:border-0 hover:bg-gray-50 p-4 rounded-lg transition-colors">
-                                      <button onClick={() => toggleQuestion(q.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
-                                        <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}: {collapsedQuestions[q.id] && <span>{getQuestionPreview(q)}</span>}</p>
-                                      </button>
-                                      {!collapsedQuestions[q.id] && (
-                                        <div className="flex gap-3">
-                                          <div className="flex-shrink-0 text-gray-400 hover:text-gray-600 cursor-move">
-                                            <GripVertical size={20} />
-                                          </div>
-                                          <div className="flex-1">
-                                            <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.text }} />
-                                            <div className="space-y-2 ml-2">
-                                                <p className="text-green-700">{q.answer}</p>
-                                            </div>
-                                          </div>
-                                          <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <button
-                                                  onClick={() => openWizard('writing', section.id, q)}
-                                                  className="p-1 text-gray-500 hover:text-blue-600"
-                                                  title="Edit question"
-                                              >
-                                                  <Edit size={18} />
-                                              </button>
-                                              <button
-                                                  onClick={() => {
-                                                      if (window.confirm('Are you sure you want to delete this question?')) {
-                                                          deleteQuestion(section.id, q.id);
-                                                      }
-                                                  }}
-                                                  className="p-1 text-gray-500 hover:text-red-600"
-                                                  title="Delete question"
-                                              >
-                                                  <Trash2 size={18} />
-                                              </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                }
-                                if (q.type === 'reading') {
-                                  return (
-                                    <div key={q.id} className="group relative pb-6 border-b border-gray-200 last:border-0 hover:bg-gray-50 p-4 rounded-lg transition-colors">
-                                      <button onClick={() => toggleQuestion(q.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
-                                        <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}: {collapsedQuestions[q.id] && <span>{getQuestionPreview(q)}</span>}</p>
-                                      </button>
-                                      {!collapsedQuestions[q.id] && (
-                                        <div className="flex gap-3">
-                                          <div className="flex-shrink-0 text-gray-400 hover:text-gray-600 cursor-move">
-                                            <GripVertical size={20} />
-                                          </div>
-                                          <div className="flex-1">
-                                            {q.title && <p className="font-semibold text-gray-900 mb-3 text-base">{q.title}</p>}
-                                            {q.passage && <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.passage }} />}
-                                            {q.questions.map((subQ, subQIndex) => (
-                                              <div key={subQ.id} className="mb-4 relative group">
-                                                <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}.{subQIndex + 1}: <span dangerouslySetInnerHTML={{ __html: subQ.text }} /></p>
-                                                <div className="space-y-2 ml-2">
-                                                  {subQ.options && subQ.options.map((opt, idx) => (
-                                                    <div key={idx} className={`flex items-center gap-2 text-gray-700 py-1 ${idx === subQ.correctAnswer ? 'text-green-600 font-medium' : ''}`}>
-                                                      <span className="font-medium">{String.fromCharCode(65 + idx)})</span>
-                                                      <span>{opt}</span>
-                                                      {idx === subQ.correctAnswer && (
-                                                        <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Correct</span>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                          <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <button
-                                                  onClick={() => openWizard('reading', section.id, q)}
-                                                  className="p-1 text-gray-500 hover:text-blue-600"
-                                                  title="Edit question"
-                                              >
-                                                  <Edit size={18} />
-                                              </button>
-                                              <button
-                                                  onClick={() => {
-                                                      if (window.confirm('Are you sure you want to delete this entire reading question?')) {
-                                                          deleteQuestion(section.id, q.id);
-                                                      }
-                                                  }}
-                                                  className="p-1 text-gray-500 hover:text-red-600"
-                                                  title="Delete question"
-                                              >
-                                                  <Trash2 size={18} />
-                                              </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                }
-                                if (q.type === 'fill-in-the-blank') {
-                                  const passageParts = q.passage.split('{blank}');
-                                  let blankIndex = 0;
-                                  return (
-                                    <div key={q.id} className="group relative pb-6 border-b border-gray-200 last:border-0 hover:bg-gray-50 p-4 rounded-lg transition-colors">
-                                      <button onClick={() => toggleQuestion(q.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
-                                        <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}: {collapsedQuestions[q.id] && <span>{getQuestionPreview(q)}</span>}</p>
-                                      </button>
-                                      {!collapsedQuestions[q.id] && (
-                                        <div className="flex gap-3">
-                                          <div className="flex-shrink-0 text-gray-400 hover:text-gray-600 cursor-move">
-                                            <GripVertical size={20} />
-                                          </div>
-                                          <div className="flex-1">
-                                            {q.title && <p className="font-semibold text-gray-900 mb-3 text-base">{q.title}</p>}
-                                            <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }}>
-                                              {passageParts.map((part, pIdx) => (
-                                                <React.Fragment key={pIdx}>
-                                                  <span dangerouslySetInnerHTML={{ __html: part }} />
-                                                  {pIdx < passageParts.length - 1 && (
-                                                    <span className="inline-block w-20 border-b border-gray-400 mx-2">({pIdx + 1})</span>
-                                                  )}
-                                                </React.Fragment>
-                                              ))}
-                                            </div>
-                                            {q.questions.map((subQ, subQIndex) => (
-                                              <div key={subQ.id} className="mb-4 relative group">
-                                                <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}.{subQIndex + 1}:</p>
-                                                <div className="space-y-2 ml-2">
-                                                  {subQ.options && subQ.options.map((opt, idx) => (
-                                                    <div key={idx} className={`flex items-center gap-2 text-gray-700 py-1 ${idx === subQ.correctAnswer ? 'text-green-600 font-medium' : ''}`}>
-                                                      <span className="font-medium">{String.fromCharCode(65 + idx)})</span>
-                                                      <span>{opt}</span>
-                                                      {idx === subQ.correctAnswer && (
-                                                        <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Correct</span>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                          <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <button
-                                                  onClick={() => openWizard('fill-in-the-blank', section.id, q)}
-                                                  className="p-1 text-gray-500 hover:text-blue-600"
-                                                  title="Edit question"
-                                              >
-                                                  <Edit size={18} />
-                                              </button>
-                                              <button
-                                                  onClick={() => {
-                                                      if (window.confirm('Are you sure you want to delete this entire fill-in-the-blank question?')) {
-                                                          deleteQuestion(section.id, q.id);
-                                                      }
-                                                  }}
-                                                  className="p-1 text-gray-500 hover:text-red-600"
-                                                  title="Delete question"
-                                              >
-                                                  <Trash2 size={18} />
-                                              </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                }
-                                return (
-                                  <div key={q.id} className="group relative pb-6 border-b border-gray-200 last:border-0 hover:bg-gray-50 p-4 rounded-lg transition-colors">
-                                    <button onClick={() => toggleQuestion(q.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
-                                      <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}: {collapsedQuestions[q.id] && <span>{getQuestionPreview(q)}</span>}</p>
-                                    </button>
-                                    {!collapsedQuestions[q.id] && (
-                                      <div className="flex gap-3">
-                                        <div className="flex-shrink-0 text-gray-400 hover:text-gray-600 cursor-move">
-                                          <GripVertical size={20} />
-                                        </div>
-                                        <div className="flex-1">
-                                          <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.text }} />
-                                          <div className="space-y-2 ml-2">
-                                            {q.options && q.options.map((opt, idx) => (
-                                              <div key={idx} className={`flex items-center gap-2 text-gray-700 py-1 ${idx === q.correctAnswer ? 'text-green-600 font-medium' : ''}`}>
-                                                <span className="font-medium">{String.fromCharCode(65 + idx)})</span>
-                                                <span>{opt}</span>
-                                                {idx === q.correctAnswer && (
-                                                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Correct</span>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                        <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <button
-                                            onClick={() => openWizard('mcq', section.id, q)}
-                                            className="p-1 text-gray-500 hover:text-blue-600"
-                                            title="Edit question"
-                                          >
-                                            <Edit size={18} />
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              if (window.confirm('Are you sure you want to delete this question?')) {
-                                                deleteQuestion(section.id, q.id);
-                                              }
-                                            }}
-                                            className="p-1 text-gray-500 hover:text-red-600"
-                                            title="Delete question"
-                                          >
-                                            <Trash2 size={18} />
-                                          </button>
-                                        </div>
+                  {/* Shuffle now runs inline like TestsList; no modal needed */}
 
-                                      </div>
-                                    )}
+                  {questions.length === 0 ? (
+                    <div className="text-gray-400 text-center py-8">No questions in this test.</div>
+                  ) : (
+                    <>
+                      {questions.map((q, index) => (
+                        <div key={q.id} className="group relative pb-6 border-b border-gray-200 last:border-0 hover:bg-gray-50 p-4 rounded-lg transition-colors">
+                          <button onClick={() => toggleQuestion(q.id)} className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-4">
+                            <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}: {collapsedQuestions[q.id] && <span>{getQuestionPreview(q)}</span>}</p>
+                          </button>
+                          {!collapsedQuestions[q.id] && (
+                            <div className="flex gap-3">
+                              <div className="flex-shrink-0 text-gray-400 hover:text-gray-600 cursor-move">
+                                <GripVertical size={20} />
+                              </div>
+                              <div className="flex-1">
+                                {/* render body depending on type */}
+                                {q.title && <p className="font-semibold text-gray-900 mb-3 text-base">{q.title}</p>}
+                                {q.type === 'reading' && q.passage && <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.passage }} />}
+                                {q.type === 'fill-in-the-blank' && q.passage && (
+                                  <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }}>
+                                    {q.passage.split('{blank}').map((part, pIdx, arr) => (
+                                      <React.Fragment key={pIdx}>
+                                        <span dangerouslySetInnerHTML={{ __html: part }} />
+                                        {pIdx < arr.length - 1 && (
+                                          <span className="inline-block w-20 border-b border-gray-400 mx-2">({pIdx + 1})</span>
+                                        )}
+                                      </React.Fragment>
+                                    ))}
                                   </div>
-                                )
-                              })}
+                                )}
+
+                                {q.type === 'writing' && (
+                                  <div>
+                                    <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.text }} />
+                                    <div className="space-y-2 ml-2"><p className="text-green-700">{q.answer}</p></div>
+                                  </div>
+                                )}
+
+                                {q.type === 'mcq' && (
+                                  <div>
+                                    <div className="text-gray-700 mb-4" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: q.text }} />
+                                    <div className="space-y-2 ml-2">
+                                      {q.options && q.options.map((opt, idx) => (
+                                        <div key={idx} className={`flex items-center gap-2 text-gray-700 py-1 ${idx === q.correctAnswer ? 'text-green-600 font-medium' : ''}`}>
+                                          <span className="font-medium">{String.fromCharCode(65 + idx)})</span>
+                                          <span>{opt}</span>
+                                          {idx === q.correctAnswer && (
+                                            <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Correct</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {(q.type === 'reading' || q.type === 'fill-in-the-blank') && q.questions && q.questions.map((subQ, subQIndex) => (
+                                  <div key={subQ.id} className="mb-4 relative group">
+                                    <p className="font-semibold text-gray-900 mb-3 text-base">Question {index + 1}.{subQIndex + 1}: <span dangerouslySetInnerHTML={{ __html: subQ.text }} /></p>
+                                    <div className="space-y-2 ml-2">
+                                      {subQ.options && subQ.options.map((opt, idx) => (
+                                        <div key={idx} className={`flex items-center gap-2 text-gray-700 py-1 ${idx === subQ.correctAnswer ? 'text-green-600 font-medium' : ''}`}>
+                                          <span className="font-medium">{String.fromCharCode(65 + idx)})</span>
+                                          <span>{opt}</span>
+                                          {idx === subQ.correctAnswer && (
+                                            <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Correct</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+
+
+                                
+
+                              </div>
+                              <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => openWizard(q.type === 'mcq' ? 'mcq' : q.type === 'fill-in-the-blank' ? 'fill-in-the-blank' : q.type === 'reading' ? 'reading' : 'writing', q)}
+                                  className="p-1 text-gray-500 hover:text-blue-600"
+                                  title="Edit question"
+                                >
+                                  <Edit size={18} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('Are you sure you want to delete this question?')) {
+                                      deleteQuestion(q.id);
+                                    }
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-red-600"
+                                  title="Delete question"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
                             </div>
-                            <div className="relative mt-6">
-                              <button
-                                onClick={() => setActiveDropdown(activeDropdown === section.id ? null : section.id)}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                              >
-                                <Plus size={18} />
-                                <span>Add Question</span>
-                                <ChevronDown size={16} />
-                              </button>
-                              {activeDropdown === section.id && (
-                                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                                  <button
-                                    onClick={() => openWizard('mcq', section.id)}
-                                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
-                                  >
-                                    Multi Choice
-                                  </button>
-                                  <button
-                                    onClick={() => openWizard('reading', section.id)}
-                                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
-                                  >
-                                    Reading Question
-                                  </button>
-                                  <button
-                                    onClick={() => openWizard('writing', section.id)}
-                                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
-                                  >
-                                    Writing Question
-                                  </button>
-                                  <button
-                                    onClick={() => openWizard('fill-in-the-blank', section.id)}
-                                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
-                                  >
-                                    Fill-in-the-blank
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add Question moved to header for visibility when there are no questions */}
+                    </>
                   )}
                 </div>
               </div>
+              {exportOpen && (
+                <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} test={selectedTest} />
+              )}
             </div>
           </div>
         </div>

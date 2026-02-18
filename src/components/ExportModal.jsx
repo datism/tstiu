@@ -4,10 +4,10 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import exportTestDocx from '../utils/exportToDocx';
 import { exportToXlsx } from '../utils/exportToXlsx';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useTestsStore } from '../store/useTestsStore';
 
 export default function ExportModal({ open, onClose, test }) {
-  const { selectedProject } = useProjectsStore();
+  const { tests } = useTestsStore();
   const [instructions, setInstructions] = useState({});
   const [exportToExcel, setExportToExcel] = useState(false);
   const [exportToJson, setExportToJson] = useState(false);
@@ -30,23 +30,6 @@ export default function ExportModal({ open, onClose, test }) {
           <h3 className="text-lg font-semibold">Export Test to .docx</h3>
           <button onClick={onClose} className="p-2 text-gray-600 hover:text-gray-900"><X /></button>
         </div>
-        {(test || selectedProject?.masterTest)?.sections?.map((section, index) => (
-          <div className="mb-4" key={section.id || index}>
-            <label className="block text-sm font-medium mb-1">
-              Instruction for Section: {section.sectionName || `Section ${index + 1}`} (optional)
-            </label>
-            <textarea
-              value={instructions[section.id || index] || ''}
-              onChange={(e) => {
-                const newInstructions = { ...instructions };
-                newInstructions[section.id || index] = e.target.value;
-                setInstructions(newInstructions);
-              }}
-              className="w-full border rounded px-3 py-2"
-              placeholder="e.g., Answer all questions in this section."
-            />
-          </div>
-        ))}
         <div className="mb-4">
           <label className="flex items-center">
             <input
@@ -77,15 +60,13 @@ export default function ExportModal({ open, onClose, test }) {
                 const zip = new JSZip();
                 const testWithInstructions = {
                   ...test,
-                  sections: test.sections.map((section, index) => ({
-                    ...section,
-                    instruction: instructions[section.id || index] || '',
-                  })),
+                  questions: test.questions || [],
+                  instruction: instructions[test.id] || ''
                 };
-                if (!Array.isArray(testWithInstructions.sections) || testWithInstructions.sections.length === 0) {
-                  return alert('Selected test has no sections/questions to export.');
+                if (!Array.isArray(testWithInstructions.questions) || testWithInstructions.questions.length === 0) {
+                  return alert('Selected test has no questions to export.');
                 }
-                const projectName = (selectedProject?.name || 'project').replace(/ /g, '_');
+                const projectName = (test?.name || 'test').replace(/ /g, '_');
                 const testName = (test?.name || 'test').replace(/ /g, '_');
                 const docxFilename = `${projectName}_${testName}.docx`;
                 const docxBlob = await exportTestDocx({ test: testWithInstructions, returnBlob: true });
@@ -105,21 +86,22 @@ export default function ExportModal({ open, onClose, test }) {
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
                 saveAs(zipBlob, `${projectName}_${testName}.zip`);
               } else { // Handle "Export All"
-                const allTests = selectedProject.tests || [];
+                const allTests = tests || [];
                 if (allTests.length === 0) {
-                  return alert('No tests in this project to export.');
+                  return alert('No tests to export.');
                 }
                 const zip = new JSZip();
                 for (const singleTest of allTests) {
                   const testWithInstructions = {
                     ...singleTest,
-                    sections: singleTest.sections.map(s => ({ ...s, instruction: instructions[s.id] || '' })),
+                    questions: singleTest.questions || [],
+                    instruction: instructions[singleTest.id] || ''
                   };
-                  if (!Array.isArray(testWithInstructions.sections) || testWithInstructions.sections.length === 0) {
-                    console.warn(`Skipping test "${singleTest.name}" because it has no sections.`);
+                  if (!Array.isArray(testWithInstructions.questions) || testWithInstructions.questions.length === 0) {
+                    console.warn(`Skipping test "${singleTest.name}" because it has no questions.`);
                     continue;
                   }
-                  const projectName = (selectedProject?.name || 'project').replace(/ /g, '_');
+                  const projectName = 'tests_collection';
                   const testName = (singleTest?.name || 'test').replace(/ /g, '_');
                   const filename = `${projectName}_${testName}.docx`;
                   const blob = await exportTestDocx({ test: testWithInstructions, returnBlob: true });
@@ -129,19 +111,19 @@ export default function ExportModal({ open, onClose, test }) {
                 }
 
                 if (exportToExcel) {
-                  const xlsxBlob = await exportToXlsx(selectedProject);
+                  const xlsxBlob = await exportToXlsx({ tests: allTests });
                   if (xlsxBlob) {
-                    zip.file(`${(selectedProject?.name || 'project').replace(/ /g, '_')}_answers.xlsx`, xlsxBlob);
+                    zip.file(`tests_collection_answers.xlsx`, xlsxBlob);
                   }
                 }
 
                 if (exportToJson) {
-                  const jsonBlob = new Blob([JSON.stringify(selectedProject, null, 2)], { type: 'application/json' });
-                  zip.file(`${(selectedProject?.name || 'project').replace(/ /g, '_')}.json`, jsonBlob);
+                  const jsonBlob = new Blob([JSON.stringify(allTests, null, 2)], { type: 'application/json' });
+                  zip.file(`tests_collection.json`, jsonBlob);
                 }
 
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
-                saveAs(zipBlob, `${(selectedProject?.name || 'project').replace(/ /g, '_')}_all_tests.zip`);
+                saveAs(zipBlob, `tests_collection_all_tests.zip`);
               }
 
               onClose();

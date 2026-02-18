@@ -20,8 +20,6 @@
  * @property {Array<string>} options
  * @property {number} correctAnswer
  */
-import { useProjectsStore } from '../store/useProjectsStore'
-
 function getPermutations(arr, k) {
   const results = [];
 
@@ -75,110 +73,47 @@ function shuffleQuestionOptions(question) {
 function shuffleQuestion(question) {
   const type = question.type?.toLowerCase();
 
-  switch (type) {
-    case 'mcq':
-      // MCQ: shuffle options directly
-      return shuffleQuestionOptions(question);
-    case 'fill-in-the-blank':
-    case 'reading':
-      // These have nested questions array, shuffle each sub-question's options
-      if (question.questions && Array.isArray(question.questions)) {
-        return {
-          ...question,
-          questions: question.questions.map(subQ => shuffleQuestionOptions(subQ))
-        };
-      }
-      return question;
-    default:
-      return question;
+  // Only shuffle options for top-level MCQ questions.
+  // Do NOT shuffle nested sub-questions or their options (per new requirement).
+  if (type === 'mcq') {
+    return shuffleQuestionOptions(question);
   }
+
+  // For other types (reading, fill-in-the-blank, writing), return as-is.
+  return question;
 }
 
 export function useShuffleTests() {
-  const { selectedProject } = useProjectsStore();
-
   // factorial and nPk helpers (for validation)
   const factorial = n => (n <= 1 ? 1 : n * factorial(n - 1));
   const nPk = (n, k) => (n >= k ? factorial(n) / factorial(n - k) : 0);
 
   // --- Validate before generation ---
-  function validateShuffle(numTests, sectionCounts) {
-    if (!selectedProject?.masterTest)
-      return { valid: false, perms: 0, error: 'No master test found.' };
-    if (numTests < 1)
-      return { valid: false, perms: 0, error: 'Number of tests must be at least 1.' };
-
-    const masterSections = selectedProject.masterTest.sections;
-    for (let i = 0; i < sectionCounts.length; i++) {
-      const questions = masterSections[i]?.questions || [];
-      const count = sectionCounts[i];
-      if (count < 1 || count > questions.length) {
-        return {
-          valid: false,
-          perms: 0,
-          error: `Invalid question count for section ${i + 1}`
-        };
-      }
-    }
-
-    // Calculate the minimum number of unique combinations available across sections
-    const permsPerSection = masterSections.map((section, i) =>
-      nPk(section.questions.length, sectionCounts[i])
-    );
-    const minPerms = Math.min(...permsPerSection);
-
-    if (numTests > minPerms) {
-      return {
-        valid: false,
-        perms: minPerms,
-        error: `Only ${minPerms} unique tests can be generated with current settings.`
-      };
-    }
-
-    return { valid: true, perms: minPerms, error: '' };
+  // With the current behaviour we always generate a single test that contains all top-level questions
+  // so validation only needs to check that a master test exists and has questions.
+  function validateShuffle(masterTest) {
+    if (!masterTest) return { valid: false, perms: 0, error: 'No master test provided.' };
+    const masterQuestions = masterTest.questions || [];
+    if (masterQuestions.length === 0) return { valid: false, perms: 0, error: 'Master test contains no questions.' };
+    return { valid: true, perms: 1, error: '' };
   }
 
   // --- Generate tests using combinations ---
-  function generateTests(numTests, sectionCounts) {
-    const masterSections = selectedProject.masterTest.sections || [];
+  function generateTests(masterTest) {
+    // Generate a single test that contains the same number of top-level questions as the master test,
+    // but with questions shuffled in order. Only MCQ options are shuffled.
+    const masterQuestions = masterTest.questions || [];
+    const shuffled = shuffleArray(masterQuestions).map(q => shuffleQuestion(q));
 
-    const allSectionPerms = masterSections.map((section, sIdx) => {
-      const questions = section.questions || [];
-      const subLen = sectionCounts[sIdx];
-      const perms = getPermutations(questions, subLen);
-      // Randomize order of permutations so generated tests vary
-      return perms.sort(() => Math.random() - 0.5);
-    });
+    const generated = {
+      id: `${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+      name: `Generated Test ${new Date().toISOString().split('T')[0]}`,
+      createdDate: new Date().toISOString().split('T')[0],
+      questions: shuffled,
+      questionCount: shuffled.length
+    };
 
-    // Determine how many unique tests can actually be built
-    const maxTests = Math.min(numTests, ...allSectionPerms.map(p => p.length));
-
-    const newTests = [];
-    for (let t = 0; t < maxTests; t++) {
-      const sections = masterSections.map((section, sIdx) => {
-        // Get the questions for this test variant
-        const selectedQuestions = allSectionPerms[sIdx][t];
-        
-        // Shuffle options for each question
-        const shuffledQuestions = selectedQuestions.map(q => shuffleQuestion(q));
-
-        return {
-          id: section.id,
-          sectionName: section.sectionName,
-          questions: shuffledQuestions
-        };
-      });
-
-      newTests.push({
-        id: `${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-        name: `Generated Test ${t + 1}`,
-        createdDate: new Date().toISOString().split('T')[0],
-        sections,
-        questionCount: sections.reduce((sum, s) => sum + s.questions.length, 0)
-      });
-    }
-
-    return newTests;
+    return [generated];
   }
 
   return { validateShuffle, generateTests };

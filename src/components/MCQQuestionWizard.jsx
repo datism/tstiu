@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useTestsStore } from '../store/useTestsStore';
 import QuillEditor from './QuillEditor';
 import { validateMCQQuestion } from '../utils/validation';
 
-export default function MCQQuestionWizard({ sectionId, onClose, question }) {
+export default function MCQQuestionWizard({ onClose, question }) {
   const [newQuestion, setNewQuestion] = useState(
     question || {
       id: Date.now() + Math.floor(Math.random() * 10000),
@@ -14,7 +14,7 @@ export default function MCQQuestionWizard({ sectionId, onClose, question }) {
     }
   );
   const [errors, setErrors] = useState({});
-  const { addQuestion, updateQuestion } = useProjectsStore();
+  const { addQuestion, updateQuestion } = useTestsStore();
   const isEditing = !!question;
 
   const handleSave = () => {
@@ -25,9 +25,9 @@ export default function MCQQuestionWizard({ sectionId, onClose, question }) {
     }
 
     if (isEditing) {
-      updateQuestion(sectionId, newQuestion);
+      updateQuestion(newQuestion);
     } else {
-      addQuestion(sectionId, newQuestion);
+      addQuestion(newQuestion);
     }
     onClose();
   };
