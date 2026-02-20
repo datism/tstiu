@@ -8,6 +8,7 @@ import ReadingQuestionWizard from './ReadingQuestionWizard';
 import WritingQuestionWizard from './WritingQuestionWizard';
 import FillInTheBlankQuestionWizard from './FillInTheBlankQuestionWizard';
 import ExportModal from './ExportModal';
+import AIQuestionWizard from './AIQuestionWizard';
 
 function extractTextFromHTML(html) {
   const parser = new DOMParser();
@@ -32,8 +33,9 @@ const getQuestionPreview = (question) => {
 
 export default function TestPreview() {
   const navigate = useNavigate();
-  const { selectedTest, deleteQuestion, updateQuestion, updateTestName, addTest } = useTestsStore();
+  const { selectedTest, deleteQuestion, updateQuestion, updateTestName, addTest, addQuestion } = useTestsStore();
   const { validateShuffle, generateTests } = useShuffleTests();
+  const [aiOpen, setAiOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [wizard, setWizard] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -193,6 +195,12 @@ export default function TestPreview() {
                               >
                                 Fill-in-the-blank
                               </button>
+                              <button
+                                onClick={() => { setActiveDropdown(null); setAiOpen(true); }}
+                                className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100"
+                              >
+                                Generate from AI
+                              </button>
                             </div>
                           )}
                         </div>
@@ -332,6 +340,7 @@ export default function TestPreview() {
               {exportOpen && (
                 <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} test={selectedTest} />
               )}
+              <AIQuestionWizard open={aiOpen} onClose={() => setAiOpen(false)} />
             </div>
           </div>
         </div>

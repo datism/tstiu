@@ -22,7 +22,7 @@ export default function FillInTheBlankQuestionWizard({ onClose, question }) {
   );
   const [errors, setErrors] = useState({});
   const { addQuestion, updateQuestion } = useTestsStore();
-  const isEditing = !!question;
+  const isEditing = !!question && !question.isNew;
 
   // Effect to synchronize sub-questions with the number of blanks in the passage
   useEffect(() => {

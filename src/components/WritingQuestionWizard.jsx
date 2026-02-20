@@ -14,7 +14,7 @@ export default function WritingQuestionWizard({ onClose, question }) {
   );
   const [errors, setErrors] = useState({});
   const { addQuestion, updateQuestion } = useTestsStore();
-  const isEditing = !!question;
+  const isEditing = !!question && !question.isNew;
 
   const handleSave = () => {
     const validationErrors = validateWritingQuestion(newQuestion);
